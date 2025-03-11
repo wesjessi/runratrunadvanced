@@ -227,10 +227,13 @@ def process_daily_files(input_dir, output_dir, user_params):
 
                     # Hourly breakdown (24 hours => 24 chunks of 60 rows)
                     for hour in range(24):
-                        phase = 'Active' if hour < 12 else 'Inactive'
-                        start_row = hour * 60
-                        end_row = start_row + 60
-                        hourly_df = df_rat.iloc[start_row:end_row]
+                        if hour < 12:
+                            phase = first_cycle
+                        else: 
+                            phase = "Inactive" if first_cycle == "Active" else "Active"                             
+                        start_hr = hour * 60
+                        end_hr = start_hr + 60
+                        hourly_df = df_rat.iloc[start_hr:end_hr].copy()
 
                         # Pad with zeros if it's short
                         if len(hourly_df) < 60:
