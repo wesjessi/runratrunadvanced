@@ -550,7 +550,7 @@ def process_continuous_file(input_dir, output_dir, user_params):
     debug_data = []
 
     # Identify rat columns
-    rat_columns = [c for c in df_data.columns if c.startswith("RAT")]
+    rat_columns = [c for c in df_data.columns if c.lower().startswith("rat")]
 
     # For each rat column
     for rat_col in rat_columns:
