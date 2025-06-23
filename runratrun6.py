@@ -15,6 +15,18 @@ from datetime import datetime, timedelta
 ROW_SPLIT = 720            # For daily approach: ~12 hours in rows (if 1 row/min)
 WHEEL_CIRCUMFERENCE = 1.081
 
+_bad = set(r'\/:*?[]')
+def _sanitize(name, used):
+    name = ''.join(ch if ch not in _bad else '-' for ch in name)[:31]
+    base = name
+    i = 1
+    while name in used:
+        i += 1
+        suffix = f"_{i}"
+        name = (base[:31-len(suffix)] + suffix)
+    used.add(name)
+    return name
+
 def extract_date_from_filename(filename):
     """
     Extract a date of the form MM-DD-YY from the filename.
@@ -101,34 +113,111 @@ def save_data_to_excel(output_dir, data_dict, filename):
                 df = pd.DataFrame(rat_data).T  # pivot so rows=rat, columns=date
                 df.to_excel(writer, sheet_name=metric)
 
-
-def save_hourly_data(output_dir, hourly_data, filename, phase_label):
+def _sort_day_labels(labels):
     """
-    Saves hourly data to an Excel file with separate sheets for each hour.
+    Sort labels like "Day1" or date-strings "01-19-2022"/"1-9-22"
+    into their true numerical or calendar order.
     """
-    with pd.ExcelWriter(os.path.join(output_dir, filename)) as writer:
-        has_data = False
-        for hour, data in hourly_data.items():
-            if data:  # Only process if there is data for this hour
-                has_data = True
-                rows = {'Rat': []}
-                for rat, dates in data.items():
-                    rows['Rat'].append(rat)
-                    for day_index, (date, metrics) in enumerate(dates.items(), start=1):
-                        for metric, value in metrics.items():
-                            col_name = f"{metric} Day {day_index}"
-                            if col_name not in rows:
-                                rows[col_name] = []
-                            rows[col_name].append(value)
-                # Pad columns to the same length
-                max_len = max(len(col) for col in rows.values())
-                for col in rows:
-                    while len(rows[col]) < max_len:
-                        rows[col].append(None)
-                pd.DataFrame(rows).to_excel(writer, sheet_name=f"{phase_label} Hour {hour + 1}", index=False)
+    def parse_key(d):
+        # “DayN” → int(N)
+        m = re.match(r'[Dd]ay(\d+)', d)
+        if m:
+            return int(m.group(1))
+        # Try full dates next
+        for fmt in ("%m-%d-%Y", "%m-%d-%y"):
+            try:
+                return datetime.strptime(d, fmt)
+            except ValueError:
+                continue
+        # Fallback to lexicographic
+        return d
+    return sorted(labels, key=parse_key)
+    
+def save_hourly_data_by_hour(output_dir, hourly_data, phase_label):
+    """
+    One sheet per hour. Rows=Rat, columns:
+      Total_Bouts Day1, Total_Bouts Day2, …, Total_Bouts DayN,
+      Minutes_Running Day1, …, Speed DayN.
+    """
+    import pandas as pd, os
 
-        if not has_data:
-            pd.DataFrame({"Message": ["No data available"]}).to_excel(writer, sheet_name="No Data")
+    # collect & sort labels
+    all_days = { day for hr_map in hourly_data.values() for rat_map in hr_map.values() for day in rat_map }
+    all_days = _sort_day_labels(all_days)
+
+    # Good — collect the union of all rat names across every hour
+    all_rats = sorted(
+        { rat for hr_map in hourly_data.values() for rat in hr_map.keys() },
+        key=lambda r: int(re.search(r'\d+', r).group())
+    )
+
+
+    metrics = [
+        'Total_Bouts','Minutes_Running','Total_Wheel_Turns',
+        'Distance_m','Avg_Distance_per_Bout','Avg_Bout_Length','Speed'
+    ]
+
+    # build fixed column order
+    cols = [f"{met} {day}" for met in metrics for day in all_days]
+
+    writer_path = os.path.join(output_dir, f"{phase_label}_Hourly_ByHour.xlsx")
+    with pd.ExcelWriter(writer_path) as writer:
+        for hr in sorted(hourly_data):
+            rows = []
+            for rat in all_rats:
+                rec = {'Rat': rat}
+                day_map = hourly_data[hr].get(rat, {})
+                for col in cols:
+                    met, day = col.split(' ',1)
+                    rec[col] = day_map.get(day, {}).get(met, float('nan'))
+                rows.append(rec)
+
+            df = pd.DataFrame(rows, columns=['Rat'] + cols)
+            df.to_excel(writer, sheet_name=f"{phase_label} H{hr+1}", index=False)
+
+def save_hourly_data_by_day(output_dir, hourly_data, phase_label):
+    """
+    One sheet per day. Rows=Rat, columns:
+      Total_Bouts H1, Total_Bouts H2, …, Total_Bouts H12,
+      Minutes_Running H1, …, Speed H12
+    """
+    import pandas as pd, os
+
+    all_days = { day for hr_map in hourly_data.values() for rat_map in hr_map.values() for day in rat_map }
+    all_days = _sort_day_labels(all_days)
+
+    # assume each hour-map has the same rat keys
+    first_hr = sorted(hourly_data)[0]
+    all_rats = sorted(hourly_data[first_hr].keys(),
+                      key=lambda r: int(re.search(r'\d+', r).group()))
+
+    metrics = [
+        'Total_Bouts','Minutes_Running','Total_Wheel_Turns',
+        'Distance_m','Avg_Distance_per_Bout','Avg_Bout_Length','Speed'
+    ]
+
+    cols = [f"{met} H{hr+1}" for met in metrics for hr in sorted(hourly_data)]
+
+    writer_path = os.path.join(output_dir, f"{phase_label}_Hourly_ByDay.xlsx")
+    with pd.ExcelWriter(writer_path) as writer:
+        used_sheets = set()
+        for day in all_days:
+            rows = []
+            for rat in all_rats:
+                rec = {'Rat': rat}
+                for col in cols:
+                    met, hr_tag = col.rsplit(' ',1)
+                    hr = int(hr_tag[1:]) - 1
+                    rec[col] = hourly_data[hr].get(rat, {}).get(day, {}).get(met, float('nan'))
+                rows.append(rec)
+
+            df = pd.DataFrame(rows, columns=['Rat'] + cols)
+            
+            # sanitize the sheet name
+            raw_name = f"{phase_label} {day}"
+            sheet_name = _sanitize(raw_name, used_sheets)
+            
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
 
 
 # ------------------------------------
@@ -277,9 +366,15 @@ def process_daily_files(input_dir, output_dir, user_params):
     save_data_to_excel(output_dir, active_data, 'Active_Data.xlsx')
     save_data_to_excel(output_dir, inactive_data, 'Inactive_Data.xlsx')
 
-    # Save hourly
-    save_hourly_data(output_dir, hourly_data_active, 'Active_Hourly_Data.xlsx', "Active")
-    save_hourly_data(output_dir, hourly_data_inactive, 'Inactive_Hourly_Data.xlsx', "Inactive")
+    # choose exporter based on the sidebar choice
+    # Save hourly exports
+    style = user_params.get("hourly_export_style", "By Hour")
+    if style == "By Hour":
+        save_hourly_data_by_hour(output_dir, hourly_data_active,   "Active")
+        save_hourly_data_by_hour(output_dir, hourly_data_inactive, "Inactive")
+    else:
+        save_hourly_data_by_day(output_dir, hourly_data_active,   "Active")
+        save_hourly_data_by_day(output_dir, hourly_data_inactive, "Inactive")
 
     # Debug
     debug_df = pd.DataFrame(debug_data)
@@ -499,8 +594,14 @@ def process_daily_with_manual_cycle_start(input_dir, output_dir, user_params):
     save_data_to_excel(output_dir, inactive_data, "Inactive_Data.xlsx")
     
     # Save hourly exports
-    save_hourly_data(output_dir, hourly_data_active, "Active_Hourly_Data.xlsx", "Active")
-    save_hourly_data(output_dir, hourly_data_inactive, "Inactive_Hourly_Data.xlsx", "Inactive")
+    style = user_params.get("hourly_export_style", "By Hour")
+    if style == "By Hour":
+        save_hourly_data_by_hour(output_dir, hourly_data_active,   "Active")
+        save_hourly_data_by_hour(output_dir, hourly_data_inactive, "Inactive")
+    else:
+        save_hourly_data_by_day(output_dir, hourly_data_active,   "Active")
+        save_hourly_data_by_day(output_dir, hourly_data_inactive, "Inactive")
+
 
     debug_df = pd.DataFrame(debug_data)
     debug_df.to_excel(os.path.join(output_dir, "Debug_Output.xlsx"), index=False)
@@ -550,7 +651,7 @@ def process_continuous_file(input_dir, output_dir, user_params):
     debug_data = []
 
     # Identify rat columns
-    rat_columns = [c for c in df_data.columns if c.lower().startswith("rat")]
+    rat_columns = [c for c in df_data.columns if c.startswith("RAT")]
 
     # For each rat column
     for rat_col in rat_columns:
@@ -650,8 +751,14 @@ def process_continuous_file(input_dir, output_dir, user_params):
     save_data_to_excel(output_dir, inactive_data, "Inactive_Data.xlsx")
     
     # B) Hourly "Active_Hourly_Data.xlsx" / "Inactive_Hourly_Data.xlsx"
-    save_hourly_data(output_dir, hourly_data_active, "Active_Hourly_Data.xlsx", "Active")
-    save_hourly_data(output_dir, hourly_data_inactive, "Inactive_Hourly_Data.xlsx", "Inactive")
+    style = user_params.get("hourly_export_style", "By Hour")
+    if style == "By Hour":
+        save_hourly_data_by_hour(output_dir, hourly_data_active,   "Active")
+        save_hourly_data_by_hour(output_dir, hourly_data_inactive, "Inactive")
+    else:
+        save_hourly_data_by_day(output_dir, hourly_data_active,   "Active")
+        save_hourly_data_by_day(output_dir, hourly_data_inactive, "Inactive")
+
 
     debug_df = pd.DataFrame(debug_data)
     debug_df.to_excel(os.path.join(output_dir, "Debug_Output.xlsx"), index=False)
