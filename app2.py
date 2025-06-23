@@ -55,6 +55,14 @@ else:
         "start_row": start_row
     }
 
+# ── Add this block once, after all modes have populated user_params ──
+hourly_style = st.sidebar.radio(
+    "Hourly export style:",
+    ["By Hour", "By Day"],
+    index=0
+)
+user_params["hourly_export_style"] = hourly_style
+
 # Button to start processing
 if st.sidebar.button("Start Processing"):
     if use_local == "Local Directory":
