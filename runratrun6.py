@@ -256,6 +256,8 @@ def main_process(input_dir, output_dir, mode="daily", user_params=None):
             process_continuous_file(temp_input_dir, output_dir, user_params)
         elif mode == "daily_manual_start":
             process_daily_with_manual_cycle_start(temp_input_dir, output_dir, user_params)
+        elif mode == "custom":
+            process_custom_range(temp_input_dir, output_dir, user_params)
         else:
             raise ValueError(f"Unrecognized mode: {mode}")
 
@@ -605,6 +607,95 @@ def process_daily_with_manual_cycle_start(input_dir, output_dir, user_params):
 
     debug_df = pd.DataFrame(debug_data)
     debug_df.to_excel(os.path.join(output_dir, "Debug_Output.xlsx"), index=False)
+
+def process_custom_range(input_dir, output_dir, user_params):
+    """
+    Custom‐range mode: for each sheet in each .xlsx, read column A,
+    then only analyze rows from custom_start to custom_end (inclusive).
+    """
+    import pandas as pd
+    import glob
+    import os
+    import math
+    from datetime import datetime
+   
+    
+    # Pull the user’s requested slice:
+    s = user_params["custom_start"] - 1  # to 0‐based index
+    e = user_params["custom_end"]     # iloc is exclusive at top
+    length = e - s 
+    
+    # Prepare storage exactly like process_daily_files:
+    metrics_list = ['Total_Bouts','Minutes_Running','Total_Wheel_Turns',
+                    'Distance_m','Avg_Distance_per_Bout','Avg_Bout_Length','Speed']
+    data = {m: {} for m in metrics_list}
+    hourly_data = {h: {} for h in range(12)}
+    debug_data = [] 
+    
+    # 1) Find all .xlsx files
+    files = sorted(glob.glob(os.path.join(input_dir, '*.xlsx')),
+                   key=lambda f: extract_date_from_filename(os.path.basename(f)) or datetime.min)
+
+    # …
+    for f in files:
+        date_label = os.path.splitext(os.path.basename(f))[0]
+        xl = pd.ExcelFile(f)
+        
+        for sheet in xl.sheet_names:
+            if not sheet.lower().startswith("rat"):
+                continue
+                
+            try:
+                # 1) read + convert 
+                df = xl.parse(sheet, usecols="A")
+                df.columns = ["Activity"]
+                df["Activity"] = pd.to_numeric(df["Activity"], errors="coerce").fillna(0)
+                
+                # b) slice exactly the block
+                df = df.iloc[s:e].reset_index(drop=True)
+                
+                # right after df = df.iloc[s:e].reset_index(drop=True)
+                print(f"custom_start={user_params['custom_start']}, custom_end={user_params['custom_end']}")
+                print(f"s={s}, e={e}, rows_sliced={len(df)} → hours={math.ceil(len(df)/60)}")
+
+
+                # 3) pad to exact length if it fell short
+                if len(df) < length:
+                    pad = pd.DataFrame({"Activity": [0]*(length - len(df))})
+                    df = pd.concat([df, pad], ignore_index=True)
+            
+                # 4) compute the “whole‐block” metrics
+                df['Running_Bout'] = calculate_running_bouts(df['Activity'])
+                met = calculate_metrics(df, sheet, date_label, segment="Custom", debug_data=debug_data)
+                for m, v in met.items():
+                    data[m].setdefault(sheet, {})[date_label] = v
+
+                # 5) then break *that* trimmed frame into 60-row windows
+                n_hours = math.ceil(len(df) / 60)                
+                for hour in range(n_hours):
+                    start = hour * 60
+                    end = start + 60
+                    chunk = df.iloc[start:end].copy()
+                    if len(chunk) < 60:
+                        pad = pd.DataFrame(0, index=range(60-len(chunk)), columns=chunk.columns)
+                        chunk = pd.concat([chunk, pad], ignore_index=True)
+                    hm = calculate_metrics(chunk, sheet, date_label,
+                                           segment=f"Hour{hour+1}", debug_data=debug_data)
+                    hourly_data.setdefault(hour, {})\
+                                .setdefault(sheet, {})[date_label] = hm
+
+            except Exception as e:
+                debug_data.append({"File": f, "Sheet": sheet, "Error": str(e)})
+# …
+
+
+    # 2) Save out exactly the same way
+    save_data_to_excel(output_dir, data,           "Custom_Range_Metrics.xlsx")
+    save_hourly_data_by_hour(output_dir, hourly_data,   "Custom")
+    save_hourly_data_by_day(output_dir,  hourly_data,   "Custom")
+
+    # 3) dump debug
+    pd.DataFrame(debug_data).to_excel(os.path.join(output_dir, "Debug_Custom.xlsx"), index=False)
 
 
 def process_continuous_file(input_dir, output_dir, user_params):
