@@ -19,7 +19,8 @@ mode = st.sidebar.radio(
     [
         "Daily Files (Original Mode)",
         "Continuous Multi-Day File",
-        "Multi-Day with Manual Cycle Start"
+        "Multi-Day with Manual Cycle Start",
+        "Custom Range"
     ]
 )
 
@@ -46,6 +47,16 @@ elif mode == "Continuous Multi-Day File":
         "start_cycle": start_cycle,
         "first_cycle_start_str": first_cycle_start_str
     }
+    
+elif mode == "Custom Range":
+    st.write("**Custom Range**: only analyze rows X through Y of each sheet")
+    custom_start = st.sidebar.number_input("Start row", min_value=1, value=1)
+    custom_end   = st.sidebar.number_input("End   row", min_value=1, value=60)
+    user_params = {
+        "custom_start": custom_start,
+        "custom_end":   custom_end
+    }
+    
 else:
     st.write("**Multi-Day with Manual Cycle Start** mode selected.")
     first_file_name = st.sidebar.text_input("Earliest file name", value="Day1.xlsx")
@@ -76,13 +87,22 @@ if st.sidebar.button("Start Processing"):
                     main_process(input_dir, output_dir, mode="daily", user_params=user_params)
                 elif mode == "Continuous Multi-Day File":
                     main_process(input_dir, output_dir, mode="continuous", user_params=user_params)
-                else:
+                elif mode == "Multi-Day with Manual Cycle Start": 
                     main_process(input_dir, output_dir, mode="daily_manual_start", user_params=user_params)
+                elif mode == "Custom Range":
+                    main_process(input_dir, output_dir, mode="custom", user_params=user_params)
+                else:
+                    st.error(f"Unrecognized mode: {mode}")
+                    st.session_state["processed"] = False
+                    raise ValueError(f"Unknown mode: {mode}")
+                    
                 st.success("Processing completed!")
                 st.session_state["processed"] = True
                 st.session_state["output_dir"] = output_dir
+                
             except Exception as e:
                 st.error(f"Error: {str(e)}")
+                st.session_state["processed"] = False 
     else:
         # Upload scenario
         if len(uploaded_files) == 0:
@@ -106,13 +126,21 @@ if st.sidebar.button("Start Processing"):
                     main_process(input_dir, output_dir, mode="daily", user_params=user_params)
                 elif mode == "Continuous Multi-Day File":
                     main_process(input_dir, output_dir, mode="continuous", user_params=user_params)
-                else:
+                elif mode == "Multi-Day with Manual Cycle Start": 
                     main_process(input_dir, output_dir, mode="daily_manual_start", user_params=user_params)
+                elif mode == "Custom Range":
+                    main_process(input_dir, output_dir, mode="custom", user_params=user_params)
+                else: 
+                    st.error(f"Unrecognized mode: {mode}")
+                    st.session_state["processed"] = False
+                    raise ValueError(f"Unknown mode: {mode}")
                 st.success("Processing completed!")
                 st.session_state["processed"] = True
                 st.session_state["output_dir"] = output_dir
             except Exception as e:
                 st.error(f"Error: {str(e)}")
+                st.session_state["processed"] = False
+
             finally:
                 # Optionally clean up the input_dir if you no longer need it
                 pass
