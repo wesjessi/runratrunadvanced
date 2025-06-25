@@ -370,13 +370,11 @@ def process_daily_files(input_dir, output_dir, user_params):
 
     # choose exporter based on the sidebar choice
     # Save hourly exports
-    style = user_params.get("hourly_export_style", "By Hour")
-    if style == "By Hour":
-        save_hourly_data_by_hour(output_dir, hourly_data_active,   "Active")
-        save_hourly_data_by_hour(output_dir, hourly_data_inactive, "Inactive")
-    else:
-        save_hourly_data_by_day(output_dir, hourly_data_active,   "Active")
-        save_hourly_data_by_day(output_dir, hourly_data_inactive, "Inactive")
+    # always write both exports:
+    save_hourly_data_by_hour(output_dir,   hourly_data_active,   "Active")
+    save_hourly_data_by_day( output_dir,   hourly_data_active,   "Active")
+    save_hourly_data_by_hour(output_dir,   hourly_data_inactive, "Inactive")
+    save_hourly_data_by_day( output_dir,   hourly_data_inactive, "Inactive")
 
     # Debug
     debug_df = pd.DataFrame(debug_data)
@@ -596,13 +594,12 @@ def process_daily_with_manual_cycle_start(input_dir, output_dir, user_params):
     save_data_to_excel(output_dir, inactive_data, "Inactive_Data.xlsx")
     
     # Save hourly exports
-    style = user_params.get("hourly_export_style", "By Hour")
-    if style == "By Hour":
-        save_hourly_data_by_hour(output_dir, hourly_data_active,   "Active")
-        save_hourly_data_by_hour(output_dir, hourly_data_inactive, "Inactive")
-    else:
-        save_hourly_data_by_day(output_dir, hourly_data_active,   "Active")
-        save_hourly_data_by_day(output_dir, hourly_data_inactive, "Inactive")
+    # always write both exports:
+    save_hourly_data_by_hour(output_dir,   hourly_data_active,   "Active")
+    save_hourly_data_by_day( output_dir,   hourly_data_active,   "Active")
+    save_hourly_data_by_hour(output_dir,   hourly_data_inactive, "Inactive")
+    save_hourly_data_by_day( output_dir,   hourly_data_inactive, "Inactive")
+
 
 
     debug_df = pd.DataFrame(debug_data)
@@ -842,13 +839,12 @@ def process_continuous_file(input_dir, output_dir, user_params):
     save_data_to_excel(output_dir, inactive_data, "Inactive_Data.xlsx")
     
     # B) Hourly "Active_Hourly_Data.xlsx" / "Inactive_Hourly_Data.xlsx"
-    style = user_params.get("hourly_export_style", "By Hour")
-    if style == "By Hour":
-        save_hourly_data_by_hour(output_dir, hourly_data_active,   "Active")
-        save_hourly_data_by_hour(output_dir, hourly_data_inactive, "Inactive")
-    else:
-        save_hourly_data_by_day(output_dir, hourly_data_active,   "Active")
-        save_hourly_data_by_day(output_dir, hourly_data_inactive, "Inactive")
+    # always write both exports:
+    save_hourly_data_by_hour(output_dir,   hourly_data_active,   "Active")
+    save_hourly_data_by_day( output_dir,   hourly_data_active,   "Active")
+    save_hourly_data_by_hour(output_dir,   hourly_data_inactive, "Inactive")
+    save_hourly_data_by_day( output_dir,   hourly_data_inactive, "Inactive")
+
 
 
     debug_df = pd.DataFrame(debug_data)
