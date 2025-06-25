@@ -143,16 +143,31 @@ if st.session_state.get("processed", False):
     st.write("Download your output files below:")
     output_dir = st.session_state.get("output_dir")
     if output_dir and os.path.exists(output_dir):
-        output_files = [
-            f for f in os.listdir(output_dir) 
+        # 1. Build a small priority lookup:
+        priority = {
+            "Active_Data.xlsx": 0,
+            "Inactive_Data.xlsx": 1,
+            "Active_Hourly_ByHour.xlsx": 2,
+            "Inactive_Hourly_ByHour.xlsx": 3,
+            "Active_Hourly_ByDay.xlsx": 4, 
+            "Inactive_Hourly_ByDay.xlsx": 5,
+            # add more if you have other well-known filenames…
+        }
+
+        # 2. Gather all files, then sort by priority (default=99) and then alphabetically
+        all_files = [
+            f for f in os.listdir(output_dir)
             if os.path.isfile(os.path.join(output_dir, f))
         ]
-        for file in output_files:
-            file_path = os.path.join(output_dir, file)
-            with open(file_path, "rb") as f:
-                file_data = f.read()
+        all_files.sort(key=lambda fn: (priority.get(fn, 99), fn.lower()))
+
+        # 3. Loop in that order
+        for filename in all_files:
+            path = os.path.join(output_dir, filename)
+            with open(path, "rb") as f:
+                data = f.read()
             st.download_button(
-                label=f"Download {file}",
-                data=file_data,
-                file_name=file
+                label=f"Download {filename}",
+                data=data,
+                file_name=filename
             )
